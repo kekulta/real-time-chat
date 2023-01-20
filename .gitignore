@@ -1,0 +1,5 @@
+# Project exclude paths
+/.gradle/
+/Real Time Chat/task/build/
+/Real Time Chat/task/out/
+/Real Time Chat/task/out/production/classes/

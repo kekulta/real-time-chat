@@ -1,0 +1,1336 @@
+type: edu
+files:
+- name: resources/application.properties
+  visible: true
+  text: |-
+    server.port=28852
+    management.endpoints.web.exposure.include=*
+    management.endpoint.shutdown.enabled=true
+  learner_created: false
+- name: src/chat/Main.java
+  visible: true
+  text: |
+    package chat;
+
+    import org.springframework.boot.SpringApplication;
+    import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+    @SpringBootApplication
+    public class Main {
+        public static void main(String[] args) {
+            SpringApplication.run(Main.class, args);
+        }
+    }
+  learner_created: false
+- name: build.gradle
+  visible: true
+  text: |-
+    buildscript {
+        apply plugin: 'hyperskill'
+
+        repositories {
+            mavenCentral()
+        }
+
+        dependencies {
+            classpath "org.springframework.boot:spring-boot-gradle-plugin:$hs.spring.bootVersion"
+            classpath "io.spring.gradle:dependency-management-plugin:$hs.spring.dependencyManagementVersion"
+        }
+    }
+
+    apply plugin: 'java'
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'io.spring.dependency-management'
+
+    repositories {
+        mavenCentral()
+    }
+
+    sourceSets.main.resources.srcDirs = ["resources"]
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+    }
+  learner_created: false
+- name: test/ChatTests.java
+  visible: false
+  text: |
+    import com.microsoft.playwright.*;
+    import org.hyperskill.hstest.dynamic.DynamicTest;
+    import org.hyperskill.hstest.dynamic.input.DynamicTesting;
+    import org.hyperskill.hstest.stage.SpringTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+    import org.junit.After;
+    import org.junit.Before;
+
+    import java.util.ArrayList;
+    import java.util.List;
+    import java.util.Random;
+    import java.util.regex.Pattern;
+    import java.util.stream.Stream;
+
+    import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
+    import static org.hyperskill.hstest.testcase.CheckResult.correct;
+    import static org.hyperskill.hstest.testcase.CheckResult.wrong;
+
+    public class ChatTests extends SpringTest {
+        final static Random random = new Random();
+        final static Pattern dateLengthPattern = Pattern.compile(".{5,}");
+        final static Pattern overflowPattern = Pattern.compile("^(auto|scroll)$");
+        final static int TIMEOUT = 10_000;
+        final static int NUM_OF_PUBLIC_MESSAGES = 7;
+        final static String URL = "http://localhost:28852";
+        final static String TITLE = "Chat";
+
+        final static String INPUT_MSG_ID_SELECTOR = "#input-msg";
+        final static String INPUT_USERNAME_ID_SELECTOR = "#input-username";
+        final static String SEND_MSG_BTN_ID_SELECTOR = "#send-msg-btn";
+        final static String SEND_USERNAME_BTN_ID_SELECTOR = "#send-username-btn";
+        final static String MESSAGES_ID_SELECTOR = "#messages";
+        final static String MESSAGE_CONTAINER_CLASS_SELECTOR = ".message-container";
+        final static String SENDER_CLASS_SELECTOR = ".sender";
+        final static String MESSAGE_CLASS_SELECTOR = ".message";
+        final static String DATE_CLASS_SELECTOR = ".date";
+        final static String USERS_ID_SELECTOR = "#users";
+        final static String USER_CLASS_SELECTOR = ".user";
+        final static String CHAT_WITH_ID_SELECTOR = "#chat-with";
+        final static String PUBLIC_CHAT_ID_BTN_SELECTOR = "#public-chat-btn";
+        final static String INCORRECT_OR_MISSING_TITLE_TAG_ERR = "tag \"title\" should have correct text";
+
+        final static String[] USERNAMES = {
+                "A_USER_" + random.nextInt(1000, 10000),
+                "B_USER_" + random.nextInt(1000, 10000),
+                "C_USER_" + random.nextInt(1000, 10000),
+        };
+
+        final static String PUBLIC_CHAT = "Public chat";
+        final static String[] RANDOM_PUBLIC_MESSAGES = Stream
+                .generate(ChatTests::generateRandomMessage)
+                .limit(NUM_OF_PUBLIC_MESSAGES)
+                .toArray(String[]::new);
+
+        final static String[] RANDOM_AC_MESSAGES = Stream
+                .generate(ChatTests::generateRandomMessage)
+                .limit(2)
+                .toArray(String[]::new);
+
+        final static String[] RANDOM_BC_MESSAGES = Stream
+                .generate(ChatTests::generateRandomMessage)
+                .limit(2)
+                .toArray(String[]::new);
+
+        final static List<String[]> NO_MESSAGES = List.of();
+        final static List<String[]> sentMessagesWithSenders_PublicChat = new ArrayList<>();
+        final static List<String[]> sentMessagesWithSenders_AC_Chat = new ArrayList<>();
+        final static List<String[]> sentMessagesWithSenders_BC_Chat = new ArrayList<>();
+        final List<String> loginedUsers = new ArrayList<>();
+
+        Playwright playwright;
+        Browser browser;
+        List<Page> pages = new ArrayList<>();
+
+        @Before
+        public void initBrowser() {
+            playwright = Playwright.create();
+
+            browser = playwright.firefox().launch(
+                    new BrowserType
+                            .LaunchOptions()
+                            .setHeadless(false)
+    //                        .setSlowMo(15)
+                            .setTimeout(1000 * 120));
+        }
+
+        @After
+        public void closeBrowser() {
+            if (playwright != null) {
+                playwright.close();
+            }
+        }
+
+        // Helper functions
+        static Page openNewPage(String url, Browser browser, int defaultTimeout) {
+            Page page = browser.newContext().newPage();
+            page.navigate(url);
+            page.setDefaultTimeout(defaultTimeout);
+            return page;
+        }
+
+        static String generateRandomMessage() {
+            return "Test message " + random.nextInt();
+        }
+
+        static CheckResult closePage(Page page) {
+            page.close();
+            return correct();
+        }
+
+        // Tests
+
+        @DynamicTest
+        DynamicTesting[] dt = new DynamicTesting[]{
+
+                // --- LOGIN TESTS WITH TWO USERS
+                // user 0
+                () -> {
+                    pages.add(openNewPage(URL, browser, TIMEOUT));
+                    return correct();
+                },
+                () -> testShouldContainProperTitle(pages.get(0), TITLE),
+                () -> testElementShouldBeHidden(pages.get(0), INPUT_MSG_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), SEND_MSG_BTN_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), MESSAGES_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), USERS_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), CHAT_WITH_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testFillInputField(pages.get(0), USERNAMES[0], INPUT_USERNAME_ID_SELECTOR),
+                () -> {
+                    loginedUsers.add(USERNAMES[0]);
+                    return testPressBtn(pages.get(0), SEND_USERNAME_BTN_ID_SELECTOR);
+                },
+                () -> testUserListShouldHaveProperStructureAndContent(0),
+                () -> testChatWith(pages.get(0), PUBLIC_CHAT),
+
+                // user 1
+                () -> {
+                    pages.add(openNewPage(URL, browser, TIMEOUT));
+                    return correct();
+                },
+                () -> testShouldContainProperTitle(pages.get(1), TITLE),
+                () -> testElementShouldBeHidden(pages.get(1), INPUT_MSG_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), SEND_MSG_BTN_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), MESSAGES_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), USERS_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), CHAT_WITH_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testFillInputField(pages.get(1), USERNAMES[1], INPUT_USERNAME_ID_SELECTOR),
+                () -> {
+                    loginedUsers.add(USERNAMES[1]);
+                    return testPressBtn(pages.get(1), SEND_USERNAME_BTN_ID_SELECTOR);
+                },
+                () -> testUserListShouldHaveProperStructureAndContent(1),
+                () -> testChatWith(pages.get(1), PUBLIC_CHAT),
+
+                () -> testUserListShouldHaveProperStructureAndContent(0),
+
+                // --- CHAT TESTS WITH TWO USERS
+                () -> testElementShouldBeHidden(pages.get(0), INPUT_USERNAME_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), INPUT_USERNAME_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(0), SEND_USERNAME_BTN_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(1), SEND_USERNAME_BTN_ID_SELECTOR),
+                // public message 0
+                () -> testFillInputField(pages.get(0), RANDOM_PUBLIC_MESSAGES[0], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[0], RANDOM_PUBLIC_MESSAGES[0]});
+                    return testPressBtn(pages.get(0), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                // public message 1
+                () -> testFillInputField(pages.get(1), RANDOM_PUBLIC_MESSAGES[1], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[1], RANDOM_PUBLIC_MESSAGES[1]});
+                    return testPressBtn(pages.get(1), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                // public message 2
+                () -> testFillInputField(pages.get(0), RANDOM_PUBLIC_MESSAGES[2], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[0], RANDOM_PUBLIC_MESSAGES[2]});
+                    return testPressBtn(pages.get(0), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                // public message 3
+                () -> testFillInputField(pages.get(1), RANDOM_PUBLIC_MESSAGES[3], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[1], RANDOM_PUBLIC_MESSAGES[3]});
+                    return testPressBtn(pages.get(1), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                // public message 4
+                () -> testFillInputField(pages.get(0), RANDOM_PUBLIC_MESSAGES[4], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[0], RANDOM_PUBLIC_MESSAGES[4]});
+                    return testPressBtn(pages.get(0), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+
+
+                // --- TESTS WITH THREE USERS
+                // user 2
+                () -> {
+                    pages.add(openNewPage(URL, browser, TIMEOUT));
+                    return correct();
+                },
+                () -> testElementShouldBeHidden(pages.get(2), INPUT_MSG_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), SEND_MSG_BTN_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), MESSAGES_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), USERS_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), CHAT_WITH_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testFillInputField(pages.get(2), USERNAMES[2], INPUT_USERNAME_ID_SELECTOR),
+                () -> {
+                    loginedUsers.add(USERNAMES[2]);
+                    return testPressBtn(pages.get(2), SEND_USERNAME_BTN_ID_SELECTOR);
+                },
+
+                () -> testUserListShouldHaveProperStructureAndContent(2),
+                () -> testChatWith(pages.get(2), PUBLIC_CHAT),
+                () -> testUserListShouldHaveProperStructureAndContent(1),
+                () -> testUserListShouldHaveProperStructureAndContent(0),
+
+                () -> testElementShouldBeHidden(pages.get(2), INPUT_USERNAME_ID_SELECTOR),
+                () -> testElementShouldBeHidden(pages.get(2), SEND_USERNAME_BTN_ID_SELECTOR),
+
+                // public message 5
+                () -> testFillInputField(pages.get(2), RANDOM_PUBLIC_MESSAGES[5], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[2], RANDOM_PUBLIC_MESSAGES[5]});
+                    return testPressBtn(pages.get(2), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_PublicChat),
+
+                // --- TEST SWITCHING CHATS
+                () -> testPressBtn(pages.get(0), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(0), USERNAMES[1]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), NO_MESSAGES),
+                () -> testPressBtn(pages.get(0), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(0), USERNAMES[2]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), NO_MESSAGES),
+                () -> testPressBtn(pages.get(0), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(0), PUBLIC_CHAT),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+
+                () -> testPressBtn(pages.get(1), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(1), USERNAMES[2]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), NO_MESSAGES),
+
+                // public message 6
+                () -> testFillInputField(pages.get(2), RANDOM_PUBLIC_MESSAGES[6], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_PublicChat.add(new String[]{USERNAMES[2], RANDOM_PUBLIC_MESSAGES[6]});
+                    return testPressBtn(pages.get(2), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_PublicChat),
+
+
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), NO_MESSAGES),
+                () -> testChatWith(pages.get(1), USERNAMES[2]),
+                () -> testPressBtn(pages.get(1), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(1), PUBLIC_CHAT),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+
+                // --- PRIVATE MESSAGES TESTS
+                () -> testPressBtn(pages.get(0), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(0), USERNAMES[2]),
+                () -> testPressBtn(pages.get(1), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(1), USERNAMES[0]),
+                () -> testPressBtn(pages.get(2), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(2), USERNAMES[0]),
+
+                // private message 0
+                () -> testFillInputField(pages.get(0), RANDOM_AC_MESSAGES[0], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_AC_Chat.add(new String[]{USERNAMES[0], RANDOM_AC_MESSAGES[0]});
+                    return testPressBtn(pages.get(0), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_AC_Chat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), NO_MESSAGES),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_AC_Chat),
+
+                // private message 1
+                () -> testPressBtn(pages.get(1), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(1), PUBLIC_CHAT),
+
+                () -> testFillInputField(pages.get(2), RANDOM_AC_MESSAGES[1], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_AC_Chat.add(new String[]{USERNAMES[2], RANDOM_AC_MESSAGES[1]});
+                    return testPressBtn(pages.get(2), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_AC_Chat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_AC_Chat),
+
+                // private message 2
+                () -> testPressBtn(pages.get(2), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(2), USERNAMES[1]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), NO_MESSAGES),
+
+                () -> testFillInputField(pages.get(2), RANDOM_BC_MESSAGES[0], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_BC_Chat.add(new String[]{USERNAMES[2], RANDOM_BC_MESSAGES[0]});
+                    return testPressBtn(pages.get(2), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_AC_Chat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_BC_Chat),
+
+                // private message 3
+                () -> testPressBtn(pages.get(1), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(1), USERNAMES[2]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_BC_Chat),
+
+                () -> testFillInputField(pages.get(2), RANDOM_BC_MESSAGES[1], INPUT_MSG_ID_SELECTOR),
+                () -> {
+                    sentMessagesWithSenders_BC_Chat.add(new String[]{USERNAMES[2], RANDOM_BC_MESSAGES[1]});
+                    return testPressBtn(pages.get(2), SEND_MSG_BTN_ID_SELECTOR);
+                },
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_AC_Chat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_BC_Chat),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_BC_Chat),
+
+                // recheck chats/messages
+                () -> testPressBtn(pages.get(0), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(0), USERNAMES[1]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), NO_MESSAGES),
+                () -> testPressBtn(pages.get(1), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(1), USERNAMES[0]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), NO_MESSAGES),
+                () -> testPressBtn(pages.get(2), USER_CLASS_SELECTOR + " >> nth=0"),
+                () -> testChatWith(pages.get(2), USERNAMES[0]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_AC_Chat),
+
+                () -> testPressBtn(pages.get(0), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(0), USERNAMES[2]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_AC_Chat),
+                () -> testPressBtn(pages.get(1), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(1), USERNAMES[2]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_BC_Chat),
+                () -> testPressBtn(pages.get(2), USER_CLASS_SELECTOR + " >> nth=1"),
+                () -> testChatWith(pages.get(2), USERNAMES[1]),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_BC_Chat),
+
+                () -> testPressBtn(pages.get(0), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(0), PUBLIC_CHAT),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(0), sentMessagesWithSenders_PublicChat),
+                () -> testPressBtn(pages.get(1), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(1), PUBLIC_CHAT),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(1), sentMessagesWithSenders_PublicChat),
+                () -> testPressBtn(pages.get(2), PUBLIC_CHAT_ID_BTN_SELECTOR),
+                () -> testChatWith(pages.get(2), PUBLIC_CHAT),
+                () -> testUserMessagesShouldHaveProperStructureAndContent(pages.get(2), sentMessagesWithSenders_PublicChat),
+
+
+                // --- TEST STATE AFTER CLOSING PAGE
+                () -> {
+                    loginedUsers.remove(2);
+                    return closePage(pages.get(2));
+                },
+                () -> testUserListShouldHaveProperStructureAndContent(0),
+                () -> testUserListShouldHaveProperStructureAndContent(1),
+                () -> {
+                    loginedUsers.remove(1);
+                    return closePage(pages.get(1));
+                },
+                () -> testUserListShouldHaveProperStructureAndContent(0),
+        };
+
+        CheckResult testShouldContainProperTitle(Page page, String title) {
+            return title.equals(page.title()) ? correct() : wrong(INCORRECT_OR_MISSING_TITLE_TAG_ERR);
+        }
+
+        CheckResult testElementShouldBeHidden(Page page, String elemSelector) {
+            try {
+                assertThat(page.locator(elemSelector)).isHidden();
+                return correct();
+            } catch (AssertionError e) {
+                return wrong(e.getMessage());
+            }
+        }
+
+        CheckResult testFillInputField(Page page, String msg, String inputFieldSelector) {
+            try {
+                assertThat(page.locator(inputFieldSelector)).isEmpty();
+                page.fill(inputFieldSelector, msg);
+                return correct();
+            } catch (PlaywrightException | AssertionError e) {
+                return wrong(e.getMessage());
+            }
+        }
+
+        CheckResult testPressBtn(Page page, String btnSelector) {
+            try {
+                page.click(btnSelector);
+                return correct();
+            } catch (PlaywrightException e) {
+                return wrong(e.getMessage());
+            }
+        }
+
+        CheckResult testUserListShouldHaveProperStructureAndContent(int pageAndUserIndex) {
+            int numOfLoginedUsersExceptCurrent = loginedUsers.size() - 1;
+            Locator usersLocator = pages.get(pageAndUserIndex).locator(USERS_ID_SELECTOR);
+            Locator userLocator = usersLocator.locator(USER_CLASS_SELECTOR);
+
+            try {
+                assertThat(usersLocator).hasCSS("overflow-y", overflowPattern);
+                assertThat(userLocator).hasCount(numOfLoginedUsersExceptCurrent);
+
+                for (int i = 0, j = 0; i < numOfLoginedUsersExceptCurrent; i++, j++) {
+                    if (i == pageAndUserIndex) {
+                        j++;
+                    }
+                    assertThat(userLocator.nth(i)).isVisible();
+                    assertThat(userLocator.nth(i)).hasText(loginedUsers.get(j));
+                }
+
+                return correct();
+            } catch (AssertionError e) {
+                return wrong(e.getMessage());
+            }
+        }
+
+        CheckResult testUserMessagesShouldHaveProperStructureAndContent(Page page, List<String[]> sentMessagesWithSenders) {
+            Locator messagesLocator = page.locator(MESSAGES_ID_SELECTOR);
+            Locator messageContainersLocator = messagesLocator.locator(MESSAGE_CONTAINER_CLASS_SELECTOR);
+
+            try {
+                assertThat(messagesLocator).hasCSS("overflow-y", overflowPattern);
+                assertThat(messageContainersLocator).hasCount(sentMessagesWithSenders.size());
+
+                for (int i = 0; i < sentMessagesWithSenders.size(); i++) {
+                    Locator messageContainerLocator = messageContainersLocator.nth(i);
+
+                    assertThat(messageContainerLocator.locator(SENDER_CLASS_SELECTOR)).isVisible();
+                    assertThat(messageContainerLocator.locator(MESSAGE_CLASS_SELECTOR)).isVisible();
+                    assertThat(messageContainerLocator.locator(DATE_CLASS_SELECTOR)).isVisible();
+
+                    assertThat(messageContainerLocator.locator(SENDER_CLASS_SELECTOR)).hasCount(1);
+                    assertThat(messageContainerLocator.locator(MESSAGE_CLASS_SELECTOR)).hasCount(1);
+                    assertThat(messageContainerLocator.locator(DATE_CLASS_SELECTOR)).hasCount(1);
+
+                    assertThat(messageContainerLocator.locator(SENDER_CLASS_SELECTOR)).hasText(sentMessagesWithSenders.get(i)[0]);
+                    assertThat(messageContainerLocator.locator(MESSAGE_CLASS_SELECTOR)).hasText(sentMessagesWithSenders.get(i)[1]);
+                    assertThat(messageContainerLocator.locator(DATE_CLASS_SELECTOR)).hasText(dateLengthPattern);
+                }
+
+                return correct();
+            } catch (AssertionError e) {
+                return wrong(e.getMessage());
+            }
+        }
+
+        CheckResult testChatWith(Page page, String text) {
+            try {
+                assertThat(page.locator(CHAT_WITH_ID_SELECTOR)).hasText(text);
+                return correct();
+            } catch (AssertionError e) {
+                return wrong(e.getMessage());
+            }
+        }
+    }
+  learner_created: false
+- name: resources/static/styles.css
+  visible: true
+  text: |-
+    .message-container {
+        border-style: solid; /* it sets a border */
+        border-color: brown; /* it sets the color of the border */
+        margin: 20px;
+    }
+
+    #messenger {
+        flex-grow: 2;
+    }
+
+    #input-msg {
+        flex-grow: 1;
+    }
+    #input-form {
+        display: flex;
+        position: sticky;
+        margin: 10px;
+        bottom: 0;
+    }
+
+    #chat-form {
+        height: 100vh;
+    }
+
+    #messages, #users {
+        overflow-y: scroll;
+
+    }
+
+
+
+    #users {
+        flex-grow: 1;
+    }
+
+
+    .flex {
+        display: flex;
+    }
+
+    .hidden {
+        display: none;
+    }
+  learner_created: true
+- name: src/chat/MessageController.java
+  visible: true
+  text: |
+    package chat;
+
+
+    import org.springframework.http.ResponseEntity;
+    import org.springframework.messaging.handler.annotation.MessageMapping;
+    import org.springframework.messaging.handler.annotation.Payload;
+    import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+    import org.springframework.messaging.simp.SimpMessageSendingOperations;
+    import org.springframework.messaging.simp.annotation.SendToUser;
+    import org.springframework.stereotype.Controller;
+    import org.springframework.web.bind.annotation.GetMapping;
+    import org.springframework.web.bind.annotation.RequestBody;
+    import org.springframework.web.bind.annotation.RequestParam;
+
+    import java.util.List;
+    import java.util.Objects;
+
+
+    @Controller
+    public class MessageController {
+        public static final String PUBLIC = "PUBLIC";
+
+        private final MessageService messageService;
+
+        private final SimpMessageSendingOperations messagingTemplate;
+
+        private final UserService userService;
+
+        public MessageController(MessageService messageService, UserService userService, SimpMessageSendingOperations messagingTemplate) {
+            this.messageService = messageService;
+            this.userService = userService;
+            this.messagingTemplate = messagingTemplate;
+        }
+
+
+        @GetMapping("/users")
+        public ResponseEntity<List<UserItem>> fetchUsers() {
+            return ResponseEntity.ok(userService.getAll());
+        }
+
+        @MessageMapping("/chat.addUser")
+        @SendToUser("/topic/hello")
+        public ResponseEntity<String> addUser(@RequestBody UserItem user, SimpMessageHeaderAccessor headerAccessor) {
+            user.setUUID(headerAccessor.getUser().getName());
+
+            userService.addUser(user);
+
+            Notifying notify = new Notifying();
+
+            notify.setType(Notifying.Type.JOIN);
+            notify.setUsername(user.getUsername());
+
+            messagingTemplate.convertAndSend("/topic/notify", notify);
+
+            return ResponseEntity.ok("Ok");
+        }
+
+
+        @MessageMapping("/message")
+        public void directMessage(@Payload Message message, SimpMessageHeaderAccessor headerAccessor) {
+            if (Objects.equals(message.getReceiver(), "PUBLIC")) {
+                messageService.addMessage(PUBLIC, message);
+                System.out.println("Send to everyone");
+                messagingTemplate.convertAndSend("/topic/PUBLIC", List.of(message));
+            } else {
+                String dialogID = userService.getDialogID(userService.getUUID(message.getSender()), userService.getUUID(message.getReceiver()));
+                messageService.addMessage(dialogID, message);
+
+                messagingTemplate.convertAndSendToUser(userService.getUUID(message.getReceiver()), "/topic/direct/" + message.getSender(), List.of(message));
+
+                messagingTemplate.convertAndSendToUser(userService.getUUID(message.getReceiver()), "/topic/direct", message);
+
+                messagingTemplate.convertAndSendToUser(userService.getUUID(message.getSender()), "/topic/direct/" + message.getReceiver(), List.of(message));
+            }
+
+        }
+
+        @MessageMapping("/direct/{user}")
+        public void getDialog(@RequestBody UserItem user, SimpMessageHeaderAccessor headerAccessor) {
+            String UUID = headerAccessor.getUser().getName();
+            if (Objects.equals(user.getUsername(), PUBLIC)) {
+                System.out.println("send to: " + "/topic/" + user.getUsername());
+                messagingTemplate.convertAndSendToUser(UUID, "/topic/" + user.getUsername(), messageService.getAllMessages(PUBLIC));
+                return;
+            }
+            System.out.println(user + UUID);
+            String dialogID = userService.getDialogID(userService.getUUID(user.getUsername()), UUID);
+            messagingTemplate.convertAndSendToUser(UUID, "/topic/direct/" + user.getUsername(), messageService.getAllMessages(dialogID));
+        }
+
+    }
+  learner_created: true
+- name: src/chat/Notifying.java
+  visible: true
+  text: |
+    package chat;
+
+    public class Notifying {
+
+        public Type getType() {
+            return type;
+        }
+
+        public void setType(Type type) {
+            this.type = type;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        enum Type {JOIN, LEAVE}
+
+        private Type type;
+
+        private String username;
+    }
+  learner_created: true
+- name: src/chat/WebSocketConfig.java
+  visible: true
+  text: |
+    package chat;
+
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+    import org.springframework.web.socket.config.annotation.EnableWebSocket;
+    import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+    import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+    import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+    @Configuration
+    @EnableWebSocketMessageBroker
+    public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+        @Override
+        public void configureMessageBroker(MessageBrokerRegistry config) {
+            config.enableSimpleBroker("/topic");
+            config.setApplicationDestinationPrefixes("/app");
+            config.setUserDestinationPrefix("/user");
+        }
+
+        @Override
+        public void registerStompEndpoints(StompEndpointRegistry registry) {
+            registry
+                    .addEndpoint("/connection")
+                    .setHandshakeHandler(new CustomHandshakeHandler())
+                    .withSockJS();
+        }
+    }
+  learner_created: true
+- name: src/chat/MessageService.java
+  visible: true
+  text: |+
+    package chat;
+
+    import org.springframework.stereotype.Service;
+
+    import java.util.*;
+    import java.util.concurrent.ConcurrentLinkedQueue;
+
+    @Service
+    public class MessageService {
+        private Map<String, List<Message>> messages = new HashMap<>();
+
+        void addMessage(String ID, Message message) {
+            messages.computeIfAbsent(ID, k -> new ArrayList<Message>());
+            messages.get(ID).add(message);
+        }
+
+        List<Message> getAllMessages(String ID) {
+            return messages.getOrDefault(ID, Collections.emptyList());
+        }
+    }
+
+
+  learner_created: true
+- name: src/chat/UserService.java
+  visible: true
+  text: |
+    package chat;
+
+    import java.util.*;
+    import java.util.concurrent.ConcurrentHashMap;
+    import java.util.concurrent.atomic.AtomicInteger;
+
+    import org.springframework.stereotype.Service;
+
+    @Service
+    public class UserService {
+
+        private AtomicInteger counter = new AtomicInteger(0);
+        private Map<String, UserItem> users = new ConcurrentHashMap<>();
+        private Map<String, String> UUIDs = new ConcurrentHashMap<>();
+
+        private void log() {
+            System.out.println("List of users: --");
+            for (String i : users.keySet()) {
+                System.out.println(i);
+            }
+            System.out.println("--");
+        }
+
+        void addUser(UserItem user) {
+            for (String i : users.keySet()) {
+                var ID = UUID.randomUUID().toString();
+                users.get(i).createDialog(user.getUUID(), ID);
+                user.createDialog(users.get(i).getUUID(), ID);
+            }
+            UUIDs.put(user.getUsername(), user.getUUID());
+            user.setOrder(counter.incrementAndGet());
+            users.put(user.getUUID(), user);
+            log();
+        }
+
+        void deleteUserByUUID(String UUID) {
+            System.out.println("Disconnected username : \"" + users.get(UUID).getUsername() + "\"");
+            for (String i : users.keySet()) {
+                users.get(i).deleteDialog(UUID);
+            }
+            UUIDs.remove(users.get(UUID).getUsername());
+            users.remove(UUID);
+            log();
+        }
+
+        String getUUID(String username) {
+            return UUIDs.get(username);
+        }
+
+        String getUsername(String UUID) {
+            return users.get(UUID).getUsername();
+        }
+
+        List<UserItem> getAll() {
+
+            var res = new ArrayList<UserItem>(users.values());
+            res.sort(Comparator.comparingInt(UserItem::getOrder));
+            return res;
+        }
+
+
+        Boolean isPresent(String UUID) {
+            if (UUID == null) return false;
+            return users.get(UUID) != null;
+        }
+
+        String getDialogID(String first, String second) {
+            return users.get(first).getDialog(second);
+        }
+    }
+  learner_created: true
+- name: src/chat/CustomHandshakeHandler.java
+  visible: true
+  text: |-
+    package chat;
+
+
+    import org.springframework.http.server.ServerHttpRequest;
+    import org.springframework.web.socket.WebSocketHandler;
+    import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
+
+
+    import java.security.Principal;
+    import java.util.Map;
+    import java.util.UUID;
+
+    public class CustomHandshakeHandler extends DefaultHandshakeHandler {
+        @Override
+        protected Principal determineUser(ServerHttpRequest request,
+                                          WebSocketHandler wsHandler,
+                                          Map<String, Object> attributes) {
+            // generate username by UUID
+            return new StompPrincipal(UUID.randomUUID().toString());
+        }
+    }
+
+    class StompPrincipal implements Principal {
+        String name;
+
+        StompPrincipal(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+  learner_created: true
+- name: src/chat/Message.java
+  visible: true
+  text: |
+    package chat;
+
+    import java.time.LocalDateTime;
+
+    public class Message {
+        private String receiver;
+        private String message;
+        private String sender;
+        private LocalDateTime date;
+
+        public Message() {
+
+        }
+
+        public Message(String m, String sender) {
+            this.message = m;
+            this.sender = sender;
+            this.date = LocalDateTime.now();
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = message;
+        }
+
+        public String getSender() {
+            return sender;
+        }
+
+        public void setSender(String sender) {
+            this.sender = sender;
+        }
+
+        public LocalDateTime getDate() {
+            return date;
+        }
+
+        public void setDate(LocalDateTime date) {
+            this.date = date;
+        }
+
+        public String getReceiver() {
+            return receiver;
+        }
+
+        public void setReceiver(String receiver) {
+            this.receiver = receiver;
+        }
+    }
+  learner_created: true
+- name: resources/static/index.html
+  visible: true
+  text: |-
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Chat</title>
+        <link rel="stylesheet" href="styles.css">
+
+    </head>
+    <body>
+    <div id="login-form">
+        <input id="input-username">
+        <button id="send-username-btn">Log in</button>
+    </div>
+
+
+    <div id="chat-form" class="hidden">
+        <div>
+            <div id="users"></div>
+            <button id="public-chat-btn">Public</button>
+            <div id="chat-with">Public chat</div>
+        </div>
+
+        <div id="messenger">
+            <div id="messages"></div>
+            <div id="input-form">
+                <input id="input-msg">
+                <button id="send-msg-btn">yoo</button>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="scripts.js"></script>
+    </body>
+    </html>
+  learner_created: true
+- name: src/chat/WebSocketEvents.java
+  visible: true
+  text: |-
+    package chat;
+
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.context.event.EventListener;
+    import org.springframework.messaging.simp.SimpMessageSendingOperations;
+    import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+    import org.springframework.stereotype.Component;
+    import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+    import org.springframework.web.socket.messaging.SessionSubscribeEvent;
+
+    import java.security.Principal;
+    import java.util.Optional;
+
+    @Component
+    public class WebSocketEvents {
+
+        final
+        UserService userService;
+
+        private final SimpMessageSendingOperations messagingTemplate;
+
+        public WebSocketEvents(UserService userService, SimpMessageSendingOperations messagingTemplate) {
+            this.userService = userService;
+            this.messagingTemplate = messagingTemplate;
+        }
+
+
+        @EventListener
+        public void connect(SessionSubscribeEvent event) {
+            System.out.println("Someone subscribed");
+
+        }
+
+        @EventListener
+        public void disconnect(SessionDisconnectEvent event) {
+            System.out.println("Someone disconnected");
+
+
+            Principal user = Optional.ofNullable(event.getUser()).orElse(new StompPrincipal(null));
+
+            String UUID = user.getName();
+
+            if (UUID != null) {
+
+
+                Notifying notify = new Notifying();
+
+                notify.setType(Notifying.Type.LEAVE);
+                notify.setUsername(userService.getUsername(UUID));
+
+                userService.deleteUserByUUID(UUID);
+
+                messagingTemplate.convertAndSend("/topic/notify", notify);
+            }
+
+        }
+    }
+  learner_created: true
+- name: src/chat/UserItem.java
+  visible: true
+  text: |
+    package chat;
+
+    import com.fasterxml.jackson.annotation.JsonIgnore;
+
+    import java.util.Map;
+    import java.util.concurrent.ConcurrentHashMap;
+
+    public class UserItem {
+        private String username;
+
+        private String UUID;
+        private int order;
+        @JsonIgnore
+        final private Map<String, String> dialogsIDs = new ConcurrentHashMap<>();
+
+        public UserItem() {
+
+        }
+
+        public UserItem(String username) {
+            this.username = username;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+        @JsonIgnore
+        public String getUUID() {
+            return UUID;
+        }
+
+        public void setUUID(String UUID) {
+            this.UUID = UUID;
+        }
+
+        public void deleteDialog(String UUID) {
+            dialogsIDs.remove(UUID);
+        }
+
+        public void createDialog(String UUID, String ID) {
+            dialogsIDs.put(UUID, ID);
+        }
+
+        public String getDialog(String UUID) {
+            return dialogsIDs.get(UUID);
+        }
+
+        @JsonIgnore
+        public int getOrder() {
+            return order;
+        }
+
+        public void setOrder(int order) {
+            this.order = order;
+        }
+    }
+  learner_created: true
+- name: resources/static/scripts.js
+  visible: true
+  text: |+
+    let input = document.getElementById("input-msg")
+    let send = document.getElementById("send-msg-btn")
+    let container = document.getElementById("messages")
+    let login = document.getElementById("send-username-btn")
+    let loginInput = document.getElementById("input-username")
+    let loginForm = document.getElementById("login-form")
+    let chatForm = document.getElementById("chat-form")
+    let users = document.getElementById("users")
+    let receiver = "PUBLIC";
+    let recipientDiv = document.getElementById("chat-with")
+    let publicButton = document.getElementById("public-chat-btn")
+    let currentChat = null;
+    let stompClient = null;
+    let username = null;
+    let download = null;
+
+
+    function onReceive(message) {
+        let messageContainer = document.createElement("div");
+        messageContainer.classList.add("message-container");
+
+
+        let text = document.createElement("div");
+        text.textContent = message.message;
+        text.classList.add("message");
+
+        let sender = document.createElement("div");
+        sender.textContent = message.sender;
+        sender.classList.add("sender");
+
+        let date = document.createElement("div");
+        date.textContent = message.date;
+        date.classList.add("date")
+
+        messageContainer.appendChild(text);
+        messageContainer.appendChild(sender);
+        messageContainer.appendChild(date);
+
+        container.appendChild(messageContainer);
+        messageContainer.scrollIntoView({behavior: "smooth"});
+    }
+
+    function chooseChat(chat) {
+        if (currentChat !== null) {
+            currentChat.unsubscribe();
+        }
+        container.replaceChildren()
+        receiver = chat;
+
+
+        let path
+
+        if (chat === "PUBLIC") {
+            path = '/topic/'
+            recipientDiv.textContent = 'Public chat'
+            download = stompClient.subscribe("/user/topic/PUBLIC", (messages) => {
+                messages = JSON.parse(messages.body)
+                for (let i in messages) {
+                    console.log(messages)
+                    onReceive(messages[i]);
+                }
+                download.unsubscribe()
+            })
+        } else {
+            recipientDiv.textContent = chat;
+            path = '/user/topic/direct/'
+        }
+
+        currentChat = stompClient.subscribe(path + chat, (messages) => {
+            console.log("got from /user/topic/direct/" + chat)
+            console.log(messages);
+            messages = JSON.parse(messages.body)
+            for (let i in messages) {
+                console.log(messages)
+                onReceive(messages[i]);
+            }
+        });
+
+
+        stompClient.send("/app/direct/" + chat, {}, JSON.stringify({
+            'username': chat
+        }));
+
+        Array.from(document.getElementById("users").children).forEach((e) => {
+            e.lastElementChild.classList.remove("hidden");
+        });
+
+        if (chat !== "PUBLIC") {
+            let counter = document.getElementById(chat).parentNode.lastElementChild;
+            console.log(counter.classList);
+            console.log(counter.parentNode.parentNode.children);
+
+            counter.classList.add("hidden");
+            counter.textContent = '0';
+        }
+    }
+
+    function addUser(username) {
+        let userContainer = document.createElement("div");
+        userContainer.classList.add("user-container");
+
+        let user = document.createElement("div");
+        user.textContent = username;
+        user.id = username;
+        user.classList.add("user");
+
+        let counter = document.createElement("div");
+        counter.classList.add("new-message-counter");
+        counter.textContent = '0';
+
+        user.addEventListener("click", () => {
+            chooseChat(username);
+        })
+
+
+        userContainer.appendChild(user);
+        userContainer.appendChild(counter);
+
+        users.appendChild(userContainer);
+    }
+
+    function onNotified(notification) {
+        if (notification.username !== username) {
+            if (notification.type === "LEAVE") {
+                let cont = document.getElementById(notification.username).parentNode
+                cont.parentNode.removeChild(cont);
+            } else if (notification.type === "JOIN") {
+                addUser(notification.username);
+            }
+        }
+    }
+
+    function connect() {
+        let socket = new SockJS('/connection');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, (frame) => {
+            console.log('Connected: ' + frame);
+
+
+            fetch("/users").then(function (res) {
+                return res.json();
+            }).then((messages) => {
+                console.log(JSON.stringify(messages))
+                messages.forEach(message => {
+                    console.log(message);
+                    addUser(message.username);
+                })
+            });
+
+
+            stompClient.subscribe('/topic/notify', (notification) => {
+                console.log(notification);
+                onNotified(JSON.parse(notification.body));
+            });
+            stompClient.subscribe('/user/topic/hello', (hey) => {
+                console.log(hey);
+            })
+            stompClient.subscribe('/user/topic/direct', (mes) => {
+                console.log(mes)
+
+                mes = JSON.parse(mes.body);
+                if (mes.receiver !== "PUBLIC" && mes.sender !== receiver) {
+                    let el = document.getElementById(mes.sender).parentNode.lastElementChild
+                    el.textContent = parseInt(el.textContent) + 1 + "";
+                    document.getElementById("users").prepend(document.getElementById(mes.sender).parentNode)
+                }
+            })
+
+            chooseChat(receiver)
+
+        });
+    }
+
+
+    function sendMessage(message) {
+        stompClient.send("/app/message", {}, JSON.stringify({
+            'receiver': receiver,
+            'sender': username,
+            'message': message,
+            'date': new Date()
+        }));
+    }
+
+
+    publicButton.addEventListener("click", () => {
+
+        chooseChat("PUBLIC");
+    })
+
+
+    send.addEventListener("click", (e) => {
+        if (input.value === "") return
+        console.log(input.value);
+        sendMessage(input.value);
+        input.value = "";
+    });
+
+    login.addEventListener("click", (e) => {
+        if (loginInput.value === "") return;
+        console.log(loginInput.value);
+        username = loginInput.value;
+        stompClient.send("/app/chat.addUser", {}, JSON.stringify({'username': username}))
+        loginForm.classList.add("hidden");
+        chatForm.classList.replace("hidden", "flex");
+    })
+
+    connect();
+
+
+
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/24564#comment
+status: Failed
+feedback:
+  message: |-
+    Wrong answer in test #118
+
+    Locator expected to have text: C_USER_3212
+    Received: A_USER_7518
+
+    Call log:
+    Locator.expect with timeout 5000ms
+    waiting for selector &quot;#chat-with&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+      selector resolved to &lt;div id=&quot;chat-with&quot;&gt;A_USER_7518&lt;/div&gt;
+      unexpected value &quot;A_USER_7518&quot;
+  time: "Fri, 20 Jan 2023 17:36:59 UTC"
+record: -1

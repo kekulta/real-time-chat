@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat</title>
+    <link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<div id="login-form">
+    <input id="input-username">
+    <button id="send-username-btn">Log in</button>
+</div>
+
+
+<div id="chat-form" class="hidden">
+    <div>
+        <div id="users"></div>
+        <button id="public-chat-btn">Public</button>
+        <div id="chat-with">Public chat</div>
+    </div>
+
+    <div id="messenger">
+        <div id="messages"></div>
+        <div id="input-form">
+            <input id="input-msg">
+            <button id="send-msg-btn">yoo</button>
+        </div>
+    </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+<script src="scripts.js"></script>
+</body>
+</html>

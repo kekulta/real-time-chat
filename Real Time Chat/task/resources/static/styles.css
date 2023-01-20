@@ -1,0 +1,43 @@
+.message-container {
+    border-style: solid; /* it sets a border */
+    border-color: brown; /* it sets the color of the border */
+    margin: 20px;
+}
+
+#messenger {
+    flex-grow: 2;
+}
+
+#input-msg {
+    flex-grow: 1;
+}
+#input-form {
+    display: flex;
+    position: sticky;
+    margin: 10px;
+    bottom: 0;
+}
+
+#chat-form {
+    height: 100vh;
+}
+
+#messages, #users {
+    overflow-y: scroll;
+
+}
+
+
+
+#users {
+    flex-grow: 1;
+}
+
+
+.flex {
+    display: flex;
+}
+
+.hidden {
+    display: none;
+}
